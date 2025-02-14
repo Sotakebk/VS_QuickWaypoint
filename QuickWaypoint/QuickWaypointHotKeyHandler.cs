@@ -70,7 +70,7 @@ internal class QuickWaypointHotKeyHandler
         var pinned = false;
         var (name, icon, color) = EntityToWaypoint.GetNameIconAndColor(selection);
 
-        return $"/waypoint addati {icon} ={x} ={y} ={z} {pinned} #{color:X8} \"{name}\"";
+        return $"/waypoint addati {icon} ={x} ={y} ={z} {pinned} #{color.ToArgbHexString()} \"{name}\"";
     }
 
     internal string CreateWaypointCommandForBlock(BlockSelection selection)
@@ -82,7 +82,7 @@ internal class QuickWaypointHotKeyHandler
         var pinned = false;
         var (icon, color) = BlockToWaypoint.GetIconAndColor(_api, selection);
 
-        return $"/waypoint addati {icon} ={x} ={y} ={z} {pinned} #{color:X8} \"{name}\"";
+        return $"/waypoint addati {icon} ={x} ={y} ={z} {pinned} #{color.ToArgbHexString()} \"{name}\"";
     }
 
     private bool IsMapDisallowed()

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -7,122 +8,117 @@ namespace QuickWaypoint;
 
 internal static class BlockToWaypoint
 {
-    public static (string icon, int color) GetIconAndColor(ICoreClientAPI api, BlockSelection selection)
+    public static (string icon, VectorRgb color) GetIconAndColor(ICoreClientAPI api, BlockSelection selection)
     {
-        int GetDefaultColor() => selection.Block.GetColor(api, selection.Position);
+        VectorRgb GetBlockColor() => GetColor(api, selection);
 
         var code = selection.Block.Code.FirstCodePart();
 
         if (code == "rock" || code == "loosestones" || code == "looseboulders")
         {
-            return ("rocks", ConvertColorSpace(GetDefaultColor()));
+            return ("rocks", GetBlockColor());
         }
         if (code == "ore" || code == "looseores")
         {
-            return ("pick", GetOreColor(selection.Block.Code) ?? ConvertColorSpace(Brighten(GetDefaultColor())));
+            return ("pick", GetOreColor(selection.Block.Code) ?? GetBlockColor());
         }
         if (code == "lootvessel")
         {
-            return ("vessel", 0xD3D3D3);
+            return ("vessel", VectorRgb.FromHexRgb(0xD3D3D3));
         }
         if (code == "statictranslocator")
         {
-            return ("spiral", 0x00FFFF);
+            return ("spiral", VectorRgb.FromHexRgb(0x00FFFF));
         }
         if (code == "crop")
         {
-            return ("turnip", ConvertColorSpace(Brighten(GetDefaultColor())));
+            return ("turnip", GetBlockColor());
         }
         if (code == "bigberrybush")
         {
-            return ("berries", ConvertColorSpace(Brighten(GetDefaultColor())));
+            return ("berries", GetBlockColor());
         }
         if (code == "fruittree")
         {
-            return ("apple", ConvertColorSpace(Brighten(GetDefaultColor())));
+            return ("apple", GetBlockColor());
         }
         if (code == "wildbeehive")
         {
-            return ("bee", 0xFFEA00);
+            return ("bee", VectorRgb.FromHexRgb(0xFFEA00));
         }
         if (code == "log")
         {
-            return ("tree2", ConvertColorSpace(Brighten(GetDefaultColor())));
+            return ("tree2", GetBlockColor());
         }
         if (code == "mushroom")
         {
-            return ("mushroom", ConvertColorSpace(Brighten(GetDefaultColor())));
+            return ("mushroom", GetBlockColor());
         }
 
-        return ("circle", ConvertColorSpace(Brighten(GetDefaultColor())));
+        return ("circle", GetBlockColor());
     }
 
-    private static int Brighten(int cccc)
+    private static VectorRgb GetColor(ICoreClientAPI api, BlockSelection selection)
     {
-        var c1 = (cccc >> 24) & 0xFF;
-        var c2 = (cccc >> 16) & 0xFF;
-        var c3 = (cccc >> 8) & 0xFF;
-        var c4 = cccc & 0xFF;
+        var rgb = MultisampleRandomColors(api, selection, 10);
+        var hsl = rgb.ToHsv();
 
-        c1 = Math.Min((255 / 4) + (c1 / 4) * 3, 255);
-        c2 = Math.Min((255 / 4) + (c2 / 4) * 3, 255);
-        c3 = Math.Min((255 / 4) + (c3 / 4) * 3, 255);
-        c4 = Math.Min((255 / 4) + (c4 / 4) * 3, 255);
+        // brighten it a bit - scale luminance, then scale saturation
+        var l = 0.5 + 0.5 * hsl.Luminance;
+        double maxSaturation = (l > 0.5) ? (1 - l) / l : l / (1 - l);
+        var s = hsl.Saturation * maxSaturation;
+        s = (s + maxSaturation) / 2.0;
+        s = Math.Min(1.0, s);
 
-        return (c1 << 24) | (c2 << 16) | (c3 << 8) | c4;
+        hsl.Luminance = l;
+        hsl.Saturation = s;
+        return hsl.ToRgb();
     }
 
-    private static int ConvertColorSpace(int abgr)
+    private static VectorRgb MultisampleRandomColors(ICoreClientAPI api, BlockSelection selection, int iterations = 1)
     {
-        var r = abgr & 0xFF;
-        var b = (abgr >> 8) & 0xFF;
-        var g = (abgr >> 16) & 0xFF;
-        var a = (abgr >> 24) & 0xFF;
+        double rAccumulator = 0;
+        double gAccumulator = 0;
+        double bAccumulator = 0;
+        for (var i = 0; i < iterations; i++)
+        {
+            var packedRand = selection.Block.GetRandomColor(api, selection.Position, Vintagestory.API.MathTools.BlockFacing.UP);
 
-        return (a << 24) | (r << 16) | (g << 8) | b;
+            // why the eff is red and blue flipped - lol: https://github.com/anegostudios/vsessentialsmod/blob/master/Systems/WorldMap/ChunkLayer/ChunkMapLayer.cs#L601
+            double rRand = (packedRand >> 16) & 0xFF;
+            double gRand = (packedRand >> 8) & 0xFF;
+            double bRand = packedRand & 0xFF;
+            rAccumulator += rRand;
+            gAccumulator += gRand;
+            bAccumulator += bRand;
+        }
+
+        return new VectorRgb()
+        {
+            Red = rAccumulator / (255.0 * iterations),
+            Green = gAccumulator / (255.0 * iterations),
+            Blue = bAccumulator / (255.0 * iterations),
+            Alpha = 1
+        };
     }
 
-    private static int? GetOreColor(string code)
+    private static readonly ICollection<(string[] keywords, VectorRgb? color)> OreKeywordsToColors = new (string[], VectorRgb?)[] {
+        (new[] { "copper", "malachite" }, VectorRgb.FromHexRgb(0xFFA200)),
+        (new[] { "lead", "galena" }, VectorRgb.FromHexRgb(0x7483A1)),
+        (new[] { "iron", "hemanite", "magnetite", "limonite" }, VectorRgb.FromHexRgb(0xB8430F)),
+        (new[] { "gold" }, VectorRgb.FromHexRgb(0xFFD700)),
+        (new[] { "silver" }, VectorRgb.FromHexRgb(0xC0C0C0)),
+        (new[] { "quartz" }, VectorRgb.FromHexRgb(0xFFFFFF)),
+        (new[] { "bismuth", "bismuthinite" }, VectorRgb.FromHexRgb(0x879B57)),
+        (new[] { "tin", "cassiterite" }, VectorRgb.FromHexRgb(0xDBDBDB)),
+        (new[] { "zinc", "sphalerite" }, VectorRgb.FromHexRgb(0x9D9B89)),
+    };
+
+    private static VectorRgb? GetOreColor(string code)
     {
-        bool ContainsAny(params string[] names) => names.Any(n => code.Contains(n, StringComparison.InvariantCultureIgnoreCase));
+        var (_, color) = OreKeywordsToColors.FirstOrDefault(pair => pair.keywords.Any(k => code.Contains(k)),
+            defaultValue: (keywords: Array.Empty<string>(), color: null));
 
-        if (ContainsAny("copper", "malachite"))
-        {
-            return 0xFFF40E;
-        }
-        if (ContainsAny("lead", "galena"))
-        {
-            return 0x6C6C6A;
-        }
-        if (ContainsAny("iron", "hemanite", "magnetite", "limonite"))
-        {
-            return 0xB8430F; // rust hehe
-        }
-        if (ContainsAny("gold"))
-        {
-            return 0xFFD700;
-        }
-        if (ContainsAny("silver"))
-        {
-            return 0xC0C0C0;
-        }
-        if (ContainsAny("quartz"))
-        {
-            return 0xFFFFFF;
-        }
-        if (ContainsAny("bismuth", "bismuthinite"))
-        {
-            return 0x879B57;
-        }
-        if (ContainsAny("tin", "cassiterite"))
-        {
-            return 0x879B57;
-        }
-        if (ContainsAny("zinc", "sphalerite"))
-        {
-            return 0x9D9B89;
-        }
-
-        return null;
+        return color;
     }
 }
